@@ -116,6 +116,7 @@ LLM tests are intentionally manual-only and never run as part of PR, CI, or rele
 | `keyboard_control` | Keyboard input and hotkeys |
 | `mouse_control` | Coordinate-based mouse input (fallback) |
 | `window_management` | Window control and management |
+| `winapp_ui` | Optional Microsoft `winapp` UIA/WGC backend for first-party Windows behavior |
 
 ### Two ways to call these tools
 
@@ -910,6 +911,8 @@ The server handles common Windows security scenarios:
 | `MCP_WINDOWS_WINDOW_ACTIVATION_MAX_RETRIES` | `3` | Max retries for window activation |
 | `MCP_WINDOWS_SCREENSHOT_TIMEOUT_MS` | `5000` | Screenshot operation timeout |
 | `MCP_WINDOWS_SCREENSHOT_MAX_PIXELS` | `33177600` | Maximum capture size (default 8K) |
+| `WINDOWS_MCP_WINAPP_PATH` | auto-detected | Full path to Microsoft `winapp.exe` |
+| `WINDOWS_MCP_WINAPP_WORKFLOW_ID` | unset | Optional cooperative workflow ID forwarded as `WINAPP_UI_WORKFLOW_ID` |
 
 ---
 

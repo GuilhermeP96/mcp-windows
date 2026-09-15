@@ -48,6 +48,7 @@ public static class WindowsToolsBase
     private static readonly ClipboardService _clipboardService = new(_uiAutomationThread);
     private static readonly MacroService _macroService = new();
     private static readonly ProcessService _processService = new();
+    private static readonly WinAppCliService _winAppCliService = new();
     private static readonly SnapshotStateService _snapshotStateService = new();
 
     /// <summary>Gets the monitor service.</summary>
@@ -100,6 +101,9 @@ public static class WindowsToolsBase
 
     /// <summary>Gets the process (list &amp; kill) service.</summary>
     public static ProcessService ProcessService => _processService;
+
+    /// <summary>Gets the optional first-party Microsoft winapp CLI adapter.</summary>
+    public static WinAppCliService WinAppCliService => _winAppCliService;
 
     /// <summary>Gets the process-local memory used by automatic UI snapshots.</summary>
     internal static SnapshotStateService SnapshotStateService => _snapshotStateService;

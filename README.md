@@ -137,6 +137,7 @@ Excluded tools never appear in `tools/list` and cannot be invoked.
 | `mouse_control` | Coordinate-based clicks (fallback for games) |
 | `keyboard_control` | Hotkeys and key sequences |
 | `app` | Launch applications |
+| `winapp_ui` | Optional first-party Microsoft `winapp` lane for native UIA patterns and WGC capture |
 
 Full reference: [FEATURES.md](FEATURES.md)
 
@@ -152,6 +153,25 @@ preceding result; saved macros discover fresh controls instead of storing IDs.
 Use the default `mode=full` for one inspection. For repeated views of the same window or a known
 subtree, use `mode=auto` from the first view; `full` is not
 remembered.
+
+### Optional Microsoft winapp backend
+
+`winapp_ui` complements the built-in engine; it does not replace it. Use the built-in `ui_*`
+tools for compact discovery, observed element IDs, tables, OCR, batches, macros, and file dialogs.
+Use `winapp_ui` when Microsoft first-party behavior is specifically useful, such as UIA pattern
+actions without foreground input, accessibility inspection, cooperative desktop workflows, or
+Windows Graphics Capture screenshots.
+
+Install [Microsoft winapp CLI](https://github.com/microsoft/winappCli) separately, or point the
+server at a portable executable:
+
+```powershell
+$env:WINDOWS_MCP_WINAPP_PATH = 'C:\path\to\winapp.exe'
+```
+
+The adapter invokes `winapp.exe` directly without a command shell, always requests JSON, and opts
+the child process out of telemetry. See [docs/WINAPP-NATIVE-BACKEND.md](docs/WINAPP-NATIVE-BACKEND.md)
+for the routing rationale and benchmark.
 The first response has `kind=full`; later responses have `kind=diff` when a short change list saves
 space, otherwise they safely fall back to `kind=full`. Use `mode=reset` to start a new comparison,
 and use `parentElementId` only to revisit a subtree returned by an earlier snapshot or find.

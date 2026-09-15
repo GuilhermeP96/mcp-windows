@@ -2,6 +2,7 @@ using Sbroenne.WindowsMcp.Automation.Tools;
 using Sbroenne.WindowsMcp.Clipboard.Tools;
 using Sbroenne.WindowsMcp.Macros.Tools;
 using Sbroenne.WindowsMcp.Models;
+using Sbroenne.WindowsMcp.Native.Tools;
 using Sbroenne.WindowsMcp.Processes.Tools;
 using Sbroenne.WindowsMcp.Tools;
 
@@ -57,6 +58,9 @@ internal static class CommandDispatcher
             case "process":
             case "proc":
                 return await ProcessAsync(args, ct);
+            case "winapp-ui":
+            case "native-ui":
+                return await WinAppUiAsync(args, ct);
             default:
                 return Emit.Usage($"unknown command '{args.Group}'.");
         }
@@ -76,6 +80,7 @@ internal static class CommandDispatcher
             "file-save" or "filesave" or "save" => $"{WindowOptions} path file-path file {Diagnostics}",
             "file-open" or "fileopen" or "open" => $"{WindowOptions} path file-path file {Diagnostics} trigger-mode trigger timeout-ms timeout",
             "process" or "proc" => "name pid sort-by sort limit force",
+            "winapp-ui" or "native-ui" => "app window handle selector value property timeout-ms timeout depth max-results max gone contains interactive hide-disabled hide-offscreen output-path out capture-screen focus include-diagnostics diagnostics",
             "clipboard" or "clip" => "text",
             "macro" or "ui-macro" => $"{WindowOptions} steps steps-file name continue-on-error no-stop-on-error stop-on-error with-snapshot snapshot snapshot-mode {Diagnostics} since",
             _ => null,
@@ -264,6 +269,37 @@ internal static class CommandDispatcher
             sortBy,
             a.GetInt("limit"),
             a.GetFlag("force"),
+            ct);
+        return Emit.Result(result);
+    }
+
+    private static async Task<int> WinAppUiAsync(ParsedArgs a, CancellationToken ct)
+    {
+        if (!EnumHelper.TryParse<WinAppUiAction>(a.Action, out var action))
+        {
+            return Emit.Usage(
+                $"winapp-ui requires a valid action. One of: {string.Join(", ", EnumHelper.Tokens<WinAppUiAction>())}.");
+        }
+
+        var result = await WinAppUiTool.ExecuteAsync(
+            action,
+            a.GetString("app"),
+            Window(a),
+            a.GetString("selector"),
+            a.GetString("value"),
+            a.GetString("property"),
+            a.GetInt("timeout-ms", "timeout") ?? 5000,
+            a.GetInt("depth") ?? 4,
+            a.GetInt("max-results", "max") ?? 50,
+            a.GetFlag("gone"),
+            a.GetFlag("contains"),
+            a.GetFlag("interactive"),
+            a.GetFlag("hide-disabled"),
+            a.GetFlag("hide-offscreen"),
+            a.GetString("output-path", "out"),
+            a.GetFlag("capture-screen"),
+            a.GetFlag("focus"),
+            a.GetFlag("include-diagnostics", "diagnostics"),
             ct);
         return Emit.Result(result);
     }

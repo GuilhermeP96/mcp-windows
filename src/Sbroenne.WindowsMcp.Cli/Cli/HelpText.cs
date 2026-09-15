@@ -66,6 +66,7 @@ internal static class HelpText
           file-save    Save the active document (handles the Save As dialog).
           file-open    Open an existing file (handles the Open dialog).
           process      List or kill running processes (task-manager style).
+          winapp-ui    Optional first-party Microsoft winapp UI automation lane.
 
         Run 'wincli tools' for the full option reference.
         """;
@@ -154,6 +155,15 @@ internal static class HelpText
                      kill (--pid <n> | --name <exe> [--force])
             Task-manager style listing and termination. --force also kills the child process tree.
             Critical Windows processes and the automation server itself are protected.
+
+        winapp-ui <action> [options]
+            actions: status, inspect, search, get_property, get_value, invoke, set_value,
+                     focus, scroll_into_view, wait_for, list_windows, get_focused, screenshot
+            options: --app --window --selector --value --property --timeout-ms --depth
+                     --max-results --gone --contains --interactive --hide-disabled
+                     --hide-offscreen --output-path --capture-screen --focus --include-diagnostics
+            Requires Microsoft winapp CLI. Set WINDOWS_MCP_WINAPP_PATH when it is not on PATH.
+            Prefer built-in ui snapshot/find/read for compact discovery, tables, OCR, and macros.
 
         macro <action> [options]
             actions: save (--name --steps '<json>'|--steps-file <path>), run (--name --window <h>
