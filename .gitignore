@@ -110,3 +110,4 @@ __pycache__/
 aitest-reports/
 .venv/
 uv.lock
+.tools/
