@@ -41,11 +41,35 @@ public sealed class WindowActivator
 
         // Save current window bounds before any operations that might change position
         // This is critical for multi-monitor setups where SW_RESTORE can move windows
+        //
+        // GetWindowRect is only meaningful while the window is not minimized. For a
+        // minimized window it returns the off-screen placeholder rect (around
+        // -32000,-32000), so saving that and re-applying it after SW_RESTORE parks the
+        // window off-screen: it becomes the foreground window and reports a restored
+        // state, yet stays invisible. Chromium and Electron then keep their
+        // accessibility tree collapsed to the window frame, so ui_find and ui_snapshot
+        // find no page content. Use rcNormalPosition from GetWindowPlacement instead,
+        // which is the real restored position.
+        bool wasMinimized = NativeMethods.IsIconic(handle);
         RECT savedBounds = default;
-        bool hasSavedBounds = NativeMethods.GetWindowRect(handle, out savedBounds);
+        bool hasSavedBounds;
+
+        if (wasMinimized)
+        {
+            WINDOWPLACEMENT placement = WINDOWPLACEMENT.Create();
+            hasSavedBounds = NativeMethods.GetWindowPlacement(handle, ref placement);
+            if (hasSavedBounds)
+            {
+                savedBounds = placement.RcNormalPosition;
+            }
+        }
+        else
+        {
+            hasSavedBounds = NativeMethods.GetWindowRect(handle, out savedBounds);
+        }
 
         // If window is minimized, restore it first
-        if (NativeMethods.IsIconic(handle))
+        if (wasMinimized)
         {
             NativeMethods.ShowWindow(handle, NativeConstants.SW_RESTORE);
             _ = await DeterministicWait.UntilAsync(
