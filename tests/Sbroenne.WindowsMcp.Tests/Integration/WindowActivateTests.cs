@@ -64,6 +64,24 @@ public class WindowActivateTests : IClassFixture<WindowTestFixture>
         Assert.NotNull(result.Window);
         // After activation, window should not be minimized
         Assert.NotEqual("minimized", result.Window.State);
+
+        // A minimized window reports placeholder coordinates around -32000,-32000.
+        // Activation must restore it onto at least one real monitor; otherwise UIA
+        // providers such as Chromium expose only the window frame.
+        var virtualScreen = System.Windows.Forms.SystemInformation.VirtualScreen;
+        int left = result.Window.Bounds[0];
+        int top = result.Window.Bounds[1];
+        int right = left + result.Window.Bounds[2];
+        int bottom = top + result.Window.Bounds[3];
+        bool intersectsVirtualScreen =
+            right > virtualScreen.Left &&
+            left < virtualScreen.Right &&
+            bottom > virtualScreen.Top &&
+            top < virtualScreen.Bottom;
+
+        Assert.True(
+            intersectsVirtualScreen,
+            $"Activated window must intersect the virtual screen, but bounds were [{string.Join(',', result.Window.Bounds)}].");
     }
 
     [Fact]
