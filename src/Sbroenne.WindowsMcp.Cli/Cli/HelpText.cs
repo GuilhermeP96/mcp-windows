@@ -1,10 +1,27 @@
 using System.Reflection;
+using Sbroenne.WindowsMcp.Catalog;
 
 namespace Sbroenne.WindowsMcp.Cli;
 
 /// <summary>Static help, version, and command-reference text for the CLI.</summary>
 internal static class HelpText
 {
+    public static string? ForCommand(string group)
+    {
+        var canonical = group switch
+        {
+            "window-management" => "window",
+            "clip" => "clipboard",
+            "filesave" or "save" => "file-save",
+            "fileopen" or "open" => "file-open",
+            "proc" => "process",
+            _ => group,
+        };
+
+        // Reuse the published reference so nested help cannot drift from "wincli tools".
+        return Tools.Split(["\r\n\r\n", "\n\n"], StringSplitOptions.RemoveEmptyEntries)
+            .FirstOrDefault(section => section.StartsWith(canonical + " ", StringComparison.Ordinal));
+    }
     public const string ElementIdLifetime = """
         CLI ELEMENT-ID LIFETIME
         IDs identify observations in the persistent CLI daemon, not OS handles.
@@ -14,16 +31,19 @@ internal static class HelpText
         Targeted click/type/select/read-table and state waits require --element-id.
         Selectors belong only to discovery and appear/disappear waits.
         ui read --window <handle> without --element-id explicitly reads the whole window.
-        Batch $prev requires an unambiguous preceding result. Saved macros must discover
-        fresh targets on replay, then use elementId="$prev", never persisted IDs.
+        Batch $prev requires an unambiguous preceding result. Reusable batch files should discover
+        fresh targets on each run, then use elementId="$prev", never persisted IDs.
         """;
 
     public static string Version
     {
         get
         {
-            var v = Assembly.GetExecutingAssembly().GetName().Version;
-            return $"wincli {v?.ToString(3) ?? "1.0.0"}";
+            var assembly = typeof(ToolCatalog).Assembly;
+            var version = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
+                ?? assembly.GetName().Version?.ToString(3)
+                ?? "1.0.0";
+            return $"wincli (Windows MCP {version})";
         }
     }
 
@@ -38,6 +58,7 @@ internal static class HelpText
 
         DISCOVERY
           wincli --help                 Show this help.
+          wincli <group> --help         Show group options without running an action.
           wincli tools                  List every command with its key options.
           wincli tools --json           Machine-readable tool manifest (names + JSON input schemas).
           wincli guidance               Print the full automation guide (recommended read first).
@@ -62,11 +83,9 @@ internal static class HelpText
           mouse        Mouse input (move, click, drag, scroll, ...).
           screenshot   Capture screens/windows/regions (annotated element discovery by default).
           clipboard    Read/write the Windows clipboard (get, set, clear).
-          macro        Record & replay UI workflows (save, run, list, get, delete).
           file-save    Save the active document (handles the Save As dialog).
           file-open    Open an existing file (handles the Open dialog).
           process      List or kill running processes (task-manager style).
-          winapp-ui    Optional first-party Microsoft winapp UI automation lane.
 
         Run 'wincli tools' for the full option reference.
         """;
@@ -80,7 +99,10 @@ internal static class HelpText
             Restart invalidates prior element IDs and snapshot tokens, not target applications.
 
         app --path <exe> [--args <a>|--arguments <a>] [--working-dir <d>] [--no-wait] [--timeout-ms <n>]
-            Launch an application and return its window handle.
+            Observe launchStatus: started, windowObserved, possibleHandoff, or exitedWithoutWindow.
+            A window handle is optional; multiple windows are listed without selecting a target.
+            If missing or ambiguous, inspect candidates or rediscover with window find; do not use handle-based commands until the intended target is identified.
+            Handoff delivery, loaded content, focus, and input readiness are not verified.
             For child arguments beginning with --, use --args="--new-window target"
             (or --arguments="--new-window target"). Separate --args "--new-window target"
             and missing values are usage errors; they never launch the application.
@@ -93,19 +115,27 @@ internal static class HelpText
                      --x --y --width --height --timeout-ms --target --monitor-index
                      --state --exclude-title --discard-changes
 
-        ui snapshot --window <h> [--max-depth <n>] [--control-type <t>]
+        ui snapshot --window <h> [--parent-element-id <id>] [--max-depth <n>] [--control-type <t>]
                     [--mode full|auto|reset] [--since <snapshot-token>]
-            Use full for one complete inspection (default). For repeated checks of the same window
+            Use full for one inspection (default). For repeated checks of the same window
             use auto from the first check; full is not remembered. Use reset,
             then auto, to begin a new comparison within a persistent MCP connection.
             CLI auto without --since returns a full baseline. Pass the returned token with --since
             for a later diff; a missing/mismatched baseline safely returns a full view.
+            snapshotIncomplete=true and snapshotWarning mark a partial tree even without diagnostics.
+            A full reply is not proof of completeness. Partial trees have no comparison token;
+            the next complete auto snapshot starts a fresh baseline. Narrow with --parent-element-id.
         ui find     --window <h> [--name|--name-contains|--name-pattern|--control-type|
                      --automation-id|--class-name ...] [--found-index <n>] [--include-children]
                      [--sort-by-prominence] [--in-region x,y,w,h]
                      [--visible-only] [--enabled-only] [--content-view-only]
                      [--scope window|active_dialog] [--require-unique]
+                     [--exact-depth <n>] [--parent-element-id <id>]
                      [--timeout-ms <n>]
+            For large/incomplete searches, discover containers with --exact-depth 1, then search
+            inside an observed container with --parent-element-id <id>. Repeat at that parent if needed.
+            Name/type/automation-id filters choose matches; unmatched nodes still count toward the limit.
+            Use ui read --element-id <id> when only that control's text is needed.
         ui click    --window <h> --element-id <id>
                      [--double-click] [--with-snapshot] [--snapshot-mode full|auto|reset]
         ui type     --window <h> --text <s> --element-id <id> [--clear-first]
@@ -119,13 +149,19 @@ internal static class HelpText
         ui batch    --window <h> --steps '<json>' | --steps-file <path>
                      [--continue-on-error] [--with-snapshot] [--snapshot-mode full|auto|reset]
             For --with-snapshot, use full once, auto for repeated checks, or reset to begin a new comparison.
-            Add --since <token> for checked post-action diffs on click/type/select/batch/macro.
+            Add --since <token> for checked post-action diffs on click/type/select/batch.
+            Partial attached views report postActionSnapshotIncomplete and postActionWarning.
             selectors: --name --name-contains --name-pattern --control-type --automation-id --class-name
 
         keyboard <action> --window <h> [options]
             actions: type, press, key_down, key_up, sequence, release_all,
                      get_keyboard_layout, wait_for_idle
             options: --text --key --modifiers --repeat --sequence --inter-key-delay-ms --clear-first
+            example: keyboard press --window <h> --key A --modifiers Ctrl
+            Pass the key and modifiers separately; --key 'Ctrl+A' is not a valid key.
+            Text is paced, with per-character checks in supported live-text editors.
+            Controls without readable text use paced input and return an observation warning.
+            The type timeout includes pacing time; cancellation can leave partial text.
 
         mouse <action> [options]
             actions: move, click, double_click, right_click, middle_click, drag, polyline, scroll, get_position
@@ -138,17 +174,23 @@ internal static class HelpText
                      --region-height --annotate/--no-annotate --include-cursor --image-format
                      --quality --output-mode --output-path --include-image
 
-        file-save --window <h> [--path <file>]
-            Save the active document; drives the Save As dialog when needed.
+        file-save --window <h> [--path <file>] [--trigger-mode shortcut|save_as|wait]
+            shortcut saves the current document with Ctrl+S (default).
+            save_as sends F12 in Word/PowerPoint, Ctrl+Shift+S elsewhere, without first overwriting
+            the original. --path alone does not change an existing document's destination.
+            wait fills an already open owned Save As dialog without another shortcut.
+            Overwrite and error prompts remain open for an explicit decision. Do not blindly repeat a failed save.
 
         file-open --window <h> --path <file> [--trigger-mode shortcut|wait] [--timeout-ms <n>]
             Open an existing file. shortcut sends Ctrl+O; wait handles a native dialog opened by
             a prior semantic click in a browser or desktop app.
+            One path-entry attempt and one submission; inspect remaining dialogs before choosing another action.
 
         clipboard <action> [--text <s>]
             actions: get (read clipboard text), set (write --text), clear
-            Fast bulk text IO. Pair with keyboard copy/paste: focus app, keyboard c --modifiers ctrl,
-            then clipboard get; or clipboard set --text '...' then keyboard v --modifiers ctrl.
+            Fast bulk text IO. Pair with keyboard copy/paste: focus app, then
+            keyboard press --window <h> --key C --modifiers Ctrl and clipboard get;
+            or clipboard set --text '...' then keyboard press --window <h> --key V --modifiers Ctrl.
 
         process <action> [options]
             actions: list ([--name <filter>] [--sort-by memory|name|pid] [--limit <n>]),
@@ -163,17 +205,10 @@ internal static class HelpText
                      --max-results --gone --contains --interactive --hide-disabled
                      --hide-offscreen --output-path --capture-screen --focus --include-diagnostics
             Requires Microsoft winapp CLI. Set WINDOWS_MCP_WINAPP_PATH when it is not on PATH.
-            Prefer built-in ui snapshot/find/read for compact discovery, tables, OCR, and macros.
-
-        macro <action> [options]
-            actions: save (--name --steps '<json>'|--steps-file <path>), run (--name --window <h>
-                     [--continue-on-error] [--with-snapshot] [--snapshot-mode full|auto|reset]),
-                     list, get (--name), delete (--name)
-            Persist a ui_batch steps array under a name, then replay it later against any window.
-            Replay uses the identical batch engine, so a macro run == the equivalent ui batch call.
+            Prefer built-in ui snapshot/find/read for compact discovery, tables, and OCR.
 
         Diagnostics (not global): --include-diagnostics (alias --diagnostics) is supported by
-            ui operations, macro run, file-open, and file-save for available diagnostic details.
+            ui operations, file-open, and file-save for available diagnostic details.
             Their command aliases have the same support. Other command groups reject these flags.
         Machine-readable: run 'wincli tools --json' for the full tool manifest (names + JSON schemas).
         This is the MCP schema, not a CLI flag schema; use the kebab-case options above.

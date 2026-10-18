@@ -11,15 +11,15 @@ namespace Sbroenne.WindowsMcp.Automation.Tools;
 [McpServerToolType]
 public static partial class UITypeTool
 {
-    /// <summary>Type text into an input discovered by ui_find or ui_snapshot. Use file_save for Save As dialogs. Keywords: type, input, text, fill, edit, field.</summary>
+    /// <summary>Type text into an input discovered by ui_find or ui_snapshot. Reports mismatches without automatically correcting application changes. Use file_save for Save As dialogs. Keywords: type, input, text, fill, edit, field.</summary>
     /// <param name="windowHandle">Explicit target window handle.</param>
     /// <param name="text">Text to type.</param>
     /// <param name="elementId">Required opaque ID of the input from discovery in this owner.</param>
     /// <param name="clearFirst">Clear existing text first.</param>
-    /// <param name="withSnapshot">Attach a post-action snapshot.</param>
+    /// <param name="withSnapshot">Attach a post-action snapshot. Requires enabled ui_snapshot; checked before typing.</param>
     /// <param name="snapshotMode">full for one verification, auto for repeated checks, reset for a new comparison.</param>
     /// <param name="includeDiagnostics">Include diagnostics.</param>
-    /// <param name="inputMode">auto, keyboard, or value. Auto uses keyboard input for Chromium/Electron.</param>
+    /// <param name="inputMode">auto, keyboard, or value. Auto uses keyboard input for Chromium/Electron. Keyboard input waits for readable controls to consume each character; value input does not simulate keystrokes.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <param name="snapshotSince">Previous snapshot token for a checked post-action diff.</param>
     [McpServerTool(Name = "ui_type", Title = "Type Text into Element", Destructive = true, OpenWorld = false)]

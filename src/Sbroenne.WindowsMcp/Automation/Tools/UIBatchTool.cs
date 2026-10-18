@@ -15,18 +15,13 @@ namespace Sbroenne.WindowsMcp.Automation.Tools;
 [McpServerToolType]
 public static partial class UIBatchTool
 {
-    private static readonly JsonSerializerOptions StepParseOptions = new()
-    {
-        PropertyNameCaseInsensitive = true,
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        UnmappedMemberHandling = System.Text.Json.Serialization.JsonUnmappedMemberHandling.Disallow
-    };
-
     /// <summary>
     /// Execute several UI automation steps in order against a window in ONE call (find, click, type,
     /// select, wait, read, snapshot, key, mouse, polyline). Use this for multi-field workflows - e.g. fill a
     /// login form and submit - instead of many separate ui_type/ui_click calls, and for canvas/drawing work
     /// instead of many separate mouse_control calls. Fewer round-trips = faster and cheaper for agents.
+    /// Each step requires its matching enabled tool; key requires keyboard_control and mouse/polyline
+    /// require mouse_control. Forbidden steps or snapshots reject the entire request before any action.
     /// Keywords: batch, multiple steps, sequence, workflow, fill form, multi-step, combine actions,
     /// chain, login form, automate several, one call, bulk UI actions, canvas, drawing, mouse, polyline.
     /// </summary>
@@ -42,6 +37,9 @@ public static partial class UIBatchTool
     /// - wait:     mode (appear/disappear/state), selectors or elementId+desiredState, optional timeoutMs.
     /// - read:     elementId (omit only for an explicit whole-window read), optional includeChildren.
     /// - snapshot: capture the window element tree (optional maxDepth).
+    /// Snapshot steps report snapshotIncomplete and snapshotWarning when the scan limit leaves
+    /// controls unchecked. Attached snapshots report postActionSnapshotIncomplete and postActionWarning.
+    /// Incomplete snapshots cannot prove absence or no changes and are not used for diffs.
     /// - key:      key (e.g. enter, tab, f5) with optional modifiers (ctrl,shift,alt,win) and repeat.
     /// - mouse:    mouseAction (move/click/double_click/right_click/middle_click/drag/polyline/scroll) plus x,y
     ///             (and endX,endY for drag), optional button, modifiers, direction, amount.
@@ -65,7 +63,7 @@ public static partial class UIBatchTool
     /// <param name="windowHandle">Window handle as decimal string (from window_management 'find'/'list' or app). Used for every step unless a step overrides it. REQUIRED.</param>
     /// <param name="steps">JSON array of step objects (see remarks). REQUIRED.</param>
     /// <param name="stopOnError">Stop at the first failing step (default: true). Set false to run every step regardless.</param>
-    /// <param name="withSnapshot">When true, attach a snapshot after the batch completes so you can verify the final state. Default: false.</param>
+    /// <param name="withSnapshot">When true, attach a snapshot after the batch completes so you can verify the final state. Requires enabled ui_snapshot. Default: false.</param>
     /// <param name="snapshotMode">Post-batch snapshot mode when withSnapshot=true: full for one verification (default), auto for repeated checks of the same window, or reset when this batch starts a new comparison.</param>
     /// <param name="includeDiagnostics">Reserved for parity; batch responses are already compact. Default: false.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
@@ -100,27 +98,10 @@ public static partial class UIBatchTool
                 $"snapshotMode must be one of: full, auto, reset (got '{snapshotMode}').");
         }
 
-        BatchStep[]? parsedSteps;
-        try
+        var validationError = BatchStepValidation.Parse(steps, out var parsedSteps);
+        if (validationError is not null)
         {
-            using var document = JsonDocument.Parse(steps);
-            var validationError = BatchStepValidation.Validate(document.RootElement);
-            if (validationError is not null)
-            {
-                return WindowsToolsBase.FailResult(validationError);
-            }
-            parsedSteps = JsonSerializer.Deserialize<BatchStep[]>(steps, StepParseOptions);
-        }
-        catch (JsonException ex)
-        {
-            return WindowsToolsBase.FailResult(
-                $"steps is not valid JSON: {ex.Message}. Expected a JSON array of step objects.");
-        }
-
-        if (parsedSteps is null || parsedSteps.Length == 0)
-        {
-            return WindowsToolsBase.FailResult(
-                "steps must be a non-empty JSON array of step objects.");
+            return WindowsToolsBase.FailResult(validationError);
         }
 
         var results = new List<BatchStepResult>(parsedSteps.Length);
@@ -183,11 +164,8 @@ public static partial class UIBatchTool
                     includeDiagnostics: false,
                     cancellationToken,
                     snapshotSince);
-                if (snapshot.Success)
-                {
-                    postSnapshot = snapshot;
-                }
-                else
+                postSnapshot = snapshot;
+                if (!snapshot.Success)
                 {
                     postSnapshotWarning = snapshot.ErrorMessage ??
                         "The batch succeeded, but its optional follow-up snapshot failed.";
@@ -212,7 +190,8 @@ public static partial class UIBatchTool
             PostActionChanges = postSnapshot?.Changes,
             PostActionSnapshotToken = postSnapshot?.SnapshotToken,
             PostActionBaseSnapshotToken = postSnapshot?.BaseSnapshotToken,
-            PostActionWarning = postSnapshotWarning
+            PostActionSnapshotIncomplete = postSnapshot?.SnapshotIncomplete,
+            PostActionWarning = postSnapshot?.SnapshotWarning ?? postSnapshotWarning
         };
 
         var json = JsonSerializer.Serialize(batchResult, WindowsToolsBase.JsonOptions);
@@ -368,8 +347,14 @@ public static partial class UIBatchTool
                     var depth = step.MaxDepth > 0 ? step.MaxDepth : 5;
                     var result = await service.GetTreeAsync(windowHandle, null, depth, null, cancellationToken);
                     return Step(index, action, result.Success,
-                        result.Success ? $"snapshot ({result.Tree?.Length ?? 0} root node(s))" : null,
-                        result.ErrorMessage);
+                        result.Success
+                            ? $"{(result.SnapshotIncomplete == true ? "incomplete snapshot" : "snapshot")} ({result.Tree?.Length ?? 0} root node(s))"
+                            : null,
+                        result.ErrorMessage) with
+                    {
+                        SnapshotIncomplete = result.SnapshotIncomplete,
+                        SnapshotWarning = result.SnapshotWarning
+                    };
                 }
 
             case "key":

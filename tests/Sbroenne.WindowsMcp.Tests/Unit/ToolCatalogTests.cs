@@ -10,12 +10,42 @@ namespace Sbroenne.WindowsMcp.Tests.Unit;
 public sealed class ToolCatalogTests
 {
     [Fact]
+    public void SharedInstructions_ExplainNarrowingAndIncompleteSnapshots()
+    {
+        var instructions = Sbroenne.WindowsMcp.Prompts.WindowsAutomationGuidance.ServerInstructions;
+        Assert.Contains("exactDepth=1", instructions, StringComparison.Ordinal);
+        Assert.Contains("parentElementId", instructions, StringComparison.Ordinal);
+        Assert.Contains("snapshotIncomplete", instructions, StringComparison.Ordinal);
+        Assert.Contains("unmatched nodes still count", instructions, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void FilteredInstructions_IdentifyAvailableToolsAndRefreshRequirements()
+    {
+        var instructions = Sbroenne.WindowsMcp.Prompts.WindowsAutomationGuidance.ForEnabledTools(
+            ["ui_read", "ui_snapshot"]);
+
+        Assert.Contains("Tools available in this server session: ui_read, ui_snapshot", instructions, StringComparison.Ordinal);
+        Assert.Contains("Do not call an unavailable tool", instructions, StringComparison.Ordinal);
+        Assert.Contains("Restart the server and reconnect the MCP client", instructions, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void GetTools_DoesNotExposeRetiredMacro()
+    {
+        Assert.DoesNotContain(ToolCatalog.GetTools(), tool => tool.Name == "ui_macro");
+    }
+
+    [Fact]
     public void FindDescription_UsesObservedIdsAndVisitedNodeBudget()
     {
         var find = Assert.Single(ToolCatalog.GetTools(), tool => tool.Name == "ui_find");
 
         Assert.Contains("elementId", find.Description, StringComparison.Ordinal);
         Assert.Contains("2000 visited UIA nodes", find.Description, StringComparison.Ordinal);
+        Assert.Contains("exactDepth=1", find.Description, StringComparison.Ordinal);
+        Assert.Contains("parentElementId", find.Description, StringComparison.Ordinal);
+        Assert.Contains("still count", find.Description, StringComparison.Ordinal);
         Assert.DoesNotContain("pass its name/automationId/controlType", find.Description, StringComparison.Ordinal);
         Assert.DoesNotContain("2000 candidates", find.Description, StringComparison.Ordinal);
     }
@@ -48,14 +78,13 @@ public sealed class ToolCatalogTests
         // Spot-check a representative slice of the surface, including the tools shipped in this PR.
         Assert.Contains("clipboard", tools.Keys);
         Assert.Contains("file_open", tools.Keys);
-        Assert.Contains("ui_macro", tools.Keys);
         Assert.Contains("ui_batch", tools.Keys);
         Assert.Contains("window_management", tools.Keys);
 
         Assert.Contains("filePath", ParameterNames(tools["file_open"]));
         Assert.Contains("windowHandle", ParameterNames(tools["file_open"]));
         Assert.Contains("action", ParameterNames(tools["clipboard"]));
-        Assert.Contains("steps", ParameterNames(tools["ui_macro"]));
+        Assert.Contains("steps", ParameterNames(tools["ui_batch"]));
         Assert.Contains("mode", ParameterNames(tools["ui_snapshot"]));
         Assert.Contains("snapshotMode", ParameterNames(tools["ui_click"]));
         Assert.Contains("snapshotMode", ParameterNames(tools["ui_batch"]));
@@ -112,6 +141,8 @@ public sealed class ToolCatalogTests
         Assert.Contains("use auto on the first check", snapshot.Description, StringComparison.Ordinal);
         Assert.Contains("full is not remembered", snapshot.Description, StringComparison.Ordinal);
         Assert.Contains("Use reset when starting a new comparison", snapshot.Description, StringComparison.Ordinal);
+        Assert.Contains("snapshotIncomplete", snapshot.Description, StringComparison.Ordinal);
+        Assert.Contains("snapshotWarning", snapshot.Description, StringComparison.Ordinal);
 
         var mode = Parameter(snapshot, "mode");
         Assert.Equal("full", mode.GetProperty("default").GetString());
@@ -127,7 +158,7 @@ public sealed class ToolCatalogTests
     public void PostActionSnapshotDescriptions_ExplainWhenToUseEachMode()
     {
         var tools = ToolCatalog.GetTools().ToDictionary(tool => tool.Name, StringComparer.Ordinal);
-        foreach (var toolName in new[] { "ui_click", "ui_type", "ui_select", "ui_batch", "ui_macro" })
+        foreach (var toolName in new[] { "ui_click", "ui_type", "ui_select", "ui_batch" })
         {
             var mode = Parameter(tools[toolName], "snapshotMode");
 

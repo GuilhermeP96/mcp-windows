@@ -123,27 +123,38 @@ public sealed class SystemResources
 
             | Tool | Purpose |
             |------|---------|
-            | `app` | Launch applications (notepad.exe, chrome.exe, winword.exe). Returns window handle. |
+            | `app` | Observe application launch. Returns a window handle only when one eligible window is identified. |
             | `window_management` | Find, activate, close, move existing windows. Get window handles. |
             | `screenshot_control` | Capture screenshots with element discovery (annotate=true). |
             | `ui_click` | Click buttons, checkboxes, menu items, links. |
             | `ui_type` | Type text into input fields. |
             | `ui_find` | Find elements, get details, inspect properties. |
             | `ui_read` | Read element text; explicit window reads can use OCR fallback. |
-            | `file_save` | 💾 Save files to disk (handles Save As dialogs automatically!). |
+            | `file_save` | Fill a supported Save As dialog and click Save once. Overwrite and error prompts remain open for an explicit decision; inspect failures before acting again. |
             | `keyboard_control` | Send hotkeys (Ctrl+S), navigate (Tab, arrows). |
-            | `mouse_control` | Low-level clicks (fallback when ui_click fails). |
+            | `mouse_control` | Low-level clicks. Use another input method only if no action was dispatched; otherwise inspect the result first. |
 
             ## The Standard Workflow: Launch App, Then Interact
 
-            1. **Launch the application** with `app` - returns a window handle
-            2. **Discover controls** with `ui_snapshot` or `ui_find`
-            3. **Use the handle and returned element ID** for targeted actions
+            1. **Launch the application** with `app` - inspect `launchStatus` and any returned `window` or `windows`
+            2. **Resolve the intended window**. Only after selecting the intended handle may handle-based discovery proceed.
+               If the handle is missing or ambiguous, use `window_management` to inspect candidates or rediscover the target.
+               If no handle is identified, do not call handle-based tools.
+            3. **Discover controls** with `ui_snapshot` or `ui_find`; verify the intended content before acting
+            4. **Use the handle and returned element ID** for targeted actions
+
+            `started` may have no window. `windowObserved` reports a visible process-owned window.
+            `possibleHandoff` reports a clean launcher exit with a matching pre-existing instance,
+            not confirmed request delivery or loaded content. Multiple windows are listed without a
+            selected `window`; inspect and choose the intended target. `exitedWithoutWindow` fails
+            when no matching window/instance can be established. None guarantees focus or readiness.
 
             ```
             app(programPath="notepad.exe")
-            → Returns: { "handle": "123456", "title": "Untitled - Notepad", ... }
+            → Example: { "success": true, "launchStatus": "windowObserved",
+                         "window": { "handle": "123456", "title": "Untitled - Notepad", ... } }
 
+            # Only after a window is identified; verify the intended content before acting
             ui_find(windowHandle="123456", nameContains="Save")
             → Choose the intended control's returned id
             ui_click(windowHandle="123456", elementId="<save-id>")
@@ -191,7 +202,7 @@ public sealed class SystemResources
             ```
             file_save(windowHandle="<handle>", filePath="C:\\Users\\User\\document.docx")
             ```
-            Handles Save As dialogs automatically - enters filename, clicks Save, handles overwrite prompts.
+            Enters the filename and clicks Save once. Overwrite and error prompts remain open for an explicit caller decision.
 
             ## When to Use Each Tool
 
@@ -199,7 +210,7 @@ public sealed class SystemResources
             |------|-------------|----------|
             | Click button/checkbox | ui_click(windowHandle=..., elementId=...) | Explicit coordinate action only if no semantic action was dispatched |
             | Type in text field | ui_type(windowHandle=..., elementId=..., text=...) | Rediscover if the ID is stale |
-            | Save a file | file_save(windowHandle=..., filePath=...) | ⚠️ keyboard_control CANNOT handle Save As dialogs! |
+            | Save a file | file_save(windowHandle=..., filePath=...) | Inspect and answer remaining prompts explicitly; do not blindly repeat the save. |
             | Press hotkey (Ctrl+S) | keyboard_control(action='press', key='s', modifiers='ctrl') | Requires a matching permission level |
             | Navigate (Tab, arrows) | keyboard_control(action='press') | - |
             | Read text from element | ui_read(windowHandle=..., elementId=...) | Rediscover; element reads never widen to window OCR |
@@ -221,7 +232,7 @@ public sealed class SystemResources
             2. **Use explicit handles** - you control which window when multiple match
             3. **Use screenshot_control(annotate=true) when you don't know element names**
             4. **Use window_management(wait_for) for dialogs** - wait for new windows to appear
-            5. **Use file_save for saving** - handles Save As dialogs automatically (⚠️ NOT keyboard_control!)
+            5. **Use file_save for supported Save As dialogs** - inspect any remaining prompt and choose the next action explicitly.
 
             ## When to Use `ui_find`
 
@@ -285,14 +296,15 @@ public sealed class SystemResources
             | `timeout` | Increase `timeoutMs` parameter, or verify the target element exists with `screenshot_control(annotate=true)`. |
             | `window_not_found` | Window closed or handle is stale. Re-run `window_management(action='find')`. |
 
-            ## File Operation Errors (file_save)
+            ## File Operation Errors (file_save, file_open)
 
             | Error Code | Recovery Action |
             |------------|-----------------|
-            | `save_failed` | File save operation failed. Check file path is valid, disk has space, and file is not locked by another process. |
-            | `dialog_not_found` | Save As dialog didn't appear. Try `keyboard_control(key='s', modifiers='ctrl')` first, then retry. |
-            | `com_interop_failed` | Office COM automation failed. Ensure Office app is responding. Try closing and reopening the document. |
-            | `invalid_file_path` | File path is malformed. Use backslashes (C:\\Users\\...) and ensure directory exists. |
+            | `confirmation_required` | Inspect the open overwrite dialog and decide whether to proceed or cancel. No answer was selected. |
+            | `path_error` | Inspect the reported path problem and any open error dialog before choosing a correction. Dialogs are not dismissed automatically. |
+            | `verification_failed` | Input may already have been sent. Inspect the filename and dialog state before choosing another action. |
+            | `timeout` | Inspect the current state; the application may still be processing the first request. Do not automatically send the shortcut again. |
+            | `invalid_parameter` | Check the path, window handle, and trigger mode. |
 
             ## Mouse/Keyboard Errors
 
@@ -449,20 +461,19 @@ public sealed class SystemResources
             // Save successful:
             {
               "success": true,
-              "filePath": "C:\\Users\\User\\document.docx",
-              "method": "com_interop",
-              "targetWindow": { "handle": "12345678", "title": "Document1 - Word", "processName": "WINWORD" }
+              "action": "save"
             }
-            // Save via dialog:
+            // Overwrite decision required:
             {
-              "success": true,
-              "filePath": "C:\\Users\\User\\file.txt",
-              "method": "save_dialog",
-              "targetWindow": { "handle": "12345678", "title": "Untitled - Notepad", "processName": "notepad" }
+              "success": false,
+              "action": "save",
+              "errorType": "confirmation_required",
+              "error": "Save requires an overwrite decision. The confirmation dialog remains open; no answer was selected.",
+              "hint": "Confirmation dialog windowHandle='12345678'."
             }
             ```
 
-            **Key fields:** `filePath` - where file was saved. `method` - how it was saved (com_interop for Office, save_dialog for others).
+            A failed or pending save is not reported as success. Inspect the existing dialog before choosing the next action.
 
             ## mouse_control
 

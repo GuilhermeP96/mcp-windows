@@ -50,23 +50,21 @@ public sealed record UIAutomationResult
     public string? PostActionElementWarning { get; init; }
 
     /// <summary>
-    /// Full element details. Only populated for single-element results or get_element_details.
+    /// Full element details returned by actions that request the complete element model.
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public UIElementInfo[]? Elements { get; init; }
 
     /// <summary>
     /// Compact element list for Find actions (token-optimized, flat list).
-    /// Use elementId from this list with get_element_details to fetch full info.
-    /// Format: id, name, type, click:[x,y,monitor], enabled.
+    /// Format: id, name, automationId (when meaningful), type, click:[x,y,monitor], enabled.
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public UIElementCompact[]? Items { get; init; }
 
     /// <summary>
     /// Compact tree structure for GetTree actions (token-optimized, with hierarchy).
-    /// Use elementId from this list with get_element_details to fetch full info.
-    /// Format: id, name, type, click:[x,y,monitor], enabled, children.
+    /// Format: id, name, automationId (when meaningful), type, click:[x,y,monitor], enabled, value, toggle, children.
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public UIElementCompactTree[]? Tree { get; init; }
@@ -79,11 +77,22 @@ public sealed record UIAutomationResult
     public UIElementInfo[]? FullTree { get; init; }
 
     /// <summary>
-    /// Snapshot response form: full for a complete tree or diff for changes from the remembered tree.
+    /// Snapshot response form: full for a tree or diff for changes from the remembered tree.
+    /// A full tree can be incomplete when <see cref="SnapshotIncomplete"/> is true.
     /// </summary>
     [JsonPropertyName("kind")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Kind { get; init; }
+
+    /// <summary>True when the snapshot scan limit left controls unchecked.</summary>
+    [JsonPropertyName("snapshotIncomplete")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? SnapshotIncomplete { get; init; }
+
+    /// <summary>Always-visible explanation and recovery guidance for an incomplete snapshot.</summary>
+    [JsonPropertyName("snapshotWarning")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? SnapshotWarning { get; init; }
 
     /// <summary>Opaque token for the latest automatic snapshot of this target and capture settings.</summary>
     [JsonPropertyName("snapshotToken")]
@@ -106,7 +115,8 @@ public sealed record UIAutomationResult
     /// Post-action window snapshot ("perceive/act fusion"). When an interactive tool is called
     /// with withSnapshot=true, this carries the window's element tree captured immediately after
     /// the action succeeded, so agents can verify the new state without a separate ui_snapshot call.
-    /// Same shape as <see cref="Tree"/>: id, name, type, click:[x,y,monitor], enabled, children.
+    /// Same shape as <see cref="Tree"/>: id, name, automationId (when meaningful), type,
+    /// click:[x,y,monitor], enabled, value, toggle, children.
     /// </summary>
     [JsonPropertyName("postActionTree")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -132,7 +142,12 @@ public sealed record UIAutomationResult
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public SnapshotChange[]? PostActionChanges { get; init; }
 
-    /// <summary>Warning when an optional post-action snapshot could not be captured.</summary>
+    /// <summary>True when an optional post-action snapshot left controls unchecked.</summary>
+    [JsonPropertyName("postActionSnapshotIncomplete")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? PostActionSnapshotIncomplete { get; init; }
+
+    /// <summary>Warning when an optional post-action snapshot is incomplete or could not be captured.</summary>
     [JsonPropertyName("postActionWarning")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? PostActionWarning { get; init; }
@@ -501,8 +516,10 @@ public sealed record UIAutomationResult
             "Element not found. Run ui_snapshot or ui_find in the same CLI daemon or MCP connection, then act with a newly returned element ID.",
 
         UIAutomationErrorType.SearchIncomplete =>
-            "Search stopped at its scan limit; the target may still exist. Narrow the search with exact name, " +
-            "automationId, controlType or className, or parentElementId within the same MCP session or CLI daemon. " +
+            "Search was incomplete; the target may still exist. Use ui_find exactDepth=1 to discover immediate " +
+            "children, then search inside an observed container with parentElementId (CLI: --exact-depth 1, " +
+            "--parent-element-id). Name/type/automationId filters choose matches; unmatched nodes still count. " +
+            "Use IDs within the same MCP session or CLI daemon. " +
             "MCP sessions and the CLI daemon are separate owners; their element IDs are not interchangeable. " +
             "A longer timeout does not increase the scan limit.",
 
@@ -511,6 +528,12 @@ public sealed record UIAutomationResult
 
         UIAutomationErrorType.PatternNotSupported =>
             "This element doesn't support the requested pattern. Use clickablePoint with mouse_control instead.",
+
+        UIAutomationErrorType.VerificationFailed =>
+            "Input may already have changed the document. Read the current text before retrying; do not blindly repeat or append it.",
+
+        UIAutomationErrorType.ConfirmationRequired =>
+            "Inspect the open confirmation dialog and decide whether to proceed or cancel. No answer was selected automatically.",
 
         UIAutomationErrorType.ElementStale =>
             "Element reference expired or belongs to another owner. Rediscover with ui_find or ui_snapshot and use the new ID; do not reuse IDs after a restart.",
