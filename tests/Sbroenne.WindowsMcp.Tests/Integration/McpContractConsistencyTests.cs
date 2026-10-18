@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Sbroenne.WindowsMcp.Catalog;
 using Sbroenne.WindowsMcp.Resources;
 using Sbroenne.WindowsMcp.Tools;
 
@@ -8,6 +9,53 @@ namespace Sbroenne.WindowsMcp.Tests.Integration;
 
 public sealed partial class McpContractConsistencyTests
 {
+    [Fact]
+    public async Task FilteredServer_AdvertisesEnabledCapabilitiesAndSharedSchemas()
+    {
+        using var cancellationSource = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var server = StartServer("--tools", "ui_read,ui_snapshot");
+        var cancellationToken = cancellationSource.Token;
+
+        try
+        {
+            await SendAsync(server, 1, "initialize", new
+            {
+                protocolVersion = "2024-11-05",
+                capabilities = new { },
+                clientInfo = new { name = "filtered-contract-test", version = "1.0" }
+            }, cancellationToken);
+            var initialize = await ReadResponseAsync(server, 1, cancellationToken);
+            var instructions = initialize.GetProperty("result").GetProperty("instructions").GetString()!;
+            Assert.Contains("Tools available in this server session: ui_read, ui_snapshot", instructions, StringComparison.Ordinal);
+            Assert.Contains("Do not call an unavailable tool", instructions, StringComparison.Ordinal);
+            Assert.Contains("Restart the server and reconnect the MCP client", instructions, StringComparison.Ordinal);
+
+            await SendAsync(server, 2, "tools/list", new { }, cancellationToken);
+            var toolsResponse = await ReadResponseAsync(server, 2, cancellationToken);
+            var advertised = toolsResponse.GetProperty("result").GetProperty("tools").EnumerateArray().ToArray();
+            Assert.Equal(2, advertised.Length);
+            Assert.Contains(advertised, tool => tool.GetProperty("name").GetString() == "ui_read");
+            Assert.Contains(advertised, tool => tool.GetProperty("name").GetString() == "ui_snapshot");
+
+            var canonical = ToolCatalog.GetTools().ToDictionary(tool => tool.Name, StringComparer.Ordinal);
+            foreach (var tool in advertised)
+            {
+                var name = tool.GetProperty("name").GetString()!;
+                Assert.Equal(
+                    canonical[name].InputSchema.GetRawText(),
+                    tool.GetProperty("inputSchema").GetRawText());
+            }
+        }
+        finally
+        {
+            if (!server.HasExited)
+            {
+                server.Kill(entireProcessTree: true);
+                await server.WaitForExitAsync(CancellationToken.None);
+            }
+        }
+    }
+
     [Fact]
     public async Task GuidanceAndDocumentationExamples_MatchDiscoverableToolSchemas()
     {
@@ -97,7 +145,7 @@ public sealed partial class McpContractConsistencyTests
         }
     }
 
-    private static Process StartServer()
+    private static Process StartServer(params string[] arguments)
     {
         var serverDllPath = typeof(WindowManagementTool).Assembly.Location;
         var process = new Process
@@ -105,7 +153,6 @@ public sealed partial class McpContractConsistencyTests
             StartInfo = new ProcessStartInfo
             {
                 FileName = "dotnet",
-                Arguments = $"\"{serverDllPath}\"",
                 RedirectStandardInput = true,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
@@ -113,6 +160,13 @@ public sealed partial class McpContractConsistencyTests
                 CreateNoWindow = true,
             }
         };
+        process.StartInfo.ArgumentList.Add(serverDllPath);
+        foreach (var argument in arguments)
+        {
+            process.StartInfo.ArgumentList.Add(argument);
+        }
+        process.StartInfo.Environment.Remove("WINDOWS_MCP_TOOLS");
+        process.StartInfo.Environment.Remove("WINDOWS_MCP_EXCLUDE_TOOLS");
 
         Assert.True(process.Start(), "Failed to start MCP server process.");
         return process;

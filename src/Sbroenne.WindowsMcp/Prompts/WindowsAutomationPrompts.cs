@@ -23,8 +23,8 @@ public sealed class WindowsAutomationPrompts
         [
             new(ChatRole.System,
                 "You are operating a Windows automation MCP server with focused tools for app launching and UI interaction. " +
-                "WORKFLOW: 1) Launch app with app(programPath='...') OR find existing window with window_management(action='find'), " +
-                "2) Use the returned handle with ui_click, ui_type, ui_read, or file_save tools. " +
+                "Launch with app(programPath='...') OR find existing windows with window_management(action='find'). " +
+                WindowsAutomationGuidance.LaunchTargetInstructions + " " +
                 "Use mouse_control and keyboard_control only as fallbacks. " +
                 "Browser automation is fully supported: Edge and Chrome page content (links, buttons, forms) is discoverable via ui_* tools using ARIA labels and visible text. " +
                 "Use the windows_mcp_browser_automation prompt for a browser-specific workflow."),
@@ -32,11 +32,13 @@ public sealed class WindowsAutomationPrompts
                 $"Goal: {goal}\n" +
                 $"App: {target}\n" +
                 "\n" +
-                "Step 1 - Get a window handle (choose one):\n" +
-                $"• app(programPath='{target}') — launch new app instance, returns handle\n" +
+                "Step 1 - Observe launch or existing windows (choose one):\n" +
+                $"• app(programPath='{target}') — observe launch; returns a handle only when one window is identified\n" +
                 $"• window_management(action='find', title='{target}') — find already-running app\n" +
                 "\n" +
-                "Step 2 - Interact with elements (using handle from step 1):\n" +
+                "Step 2 - Resolve the intended window:\n" +
+                WindowsAutomationGuidance.LaunchTargetInstructions + "\n\n" +
+                "Step 3 - Interact only with the identified window:\n" +
                 "• Find: ui_find(windowHandle='<handle>', nameContains='...') — discover elements\n" +
                 "• Discover: ui_find(windowHandle='<handle>', nameContains='...', requireUnique=true) — obtain an observed ID\n" +
                 "• Click: ui_click(windowHandle='<handle>', elementId='<observed-id>') — click buttons, tabs, checkboxes\n" +
@@ -44,10 +46,10 @@ public sealed class WindowsAutomationPrompts
                 "• Read: ui_read(windowHandle='<handle>', elementId='<observed-id>') — get only this element's text\n" +
                 "• Read table: ui_read_table(windowHandle='<handle>', elementId='<observed-grid-id>') — extract structured rows + headers\n" +
 
-                "• Save: file_save(windowHandle='<handle>', filePath='...') — saves files, handles Save As dialogs automatically\n" +
+                "• Save: file_save(windowHandle='<handle>', filePath='...') — fills supported Save As dialogs and clicks Save once; overwrite and error prompts remain open for an explicit decision. Inspect failures before deciding what to do; do not repeat the save blindly.\n" +
                 "• Open: file_open(windowHandle='<handle>', filePath='...') — opens an existing file, handles Open dialogs automatically\n" +
                 "• Clipboard: clipboard(action='get') / clipboard(action='set', text='...') — fastest bulk text IO; pair with copy/paste hotkeys\n" +
-                "• Macro: ui_macro(action='save', name='...', steps='[...]') then ui_macro(action='run', name='...', windowHandle='<handle>') — record & replay a ui_batch sequence\n" +
+                "• Batch: ui_batch(windowHandle='<handle>', steps='[...]') — combine steps; discover fresh controls for reusable workflows\n" +
                 "\n" +
                 "If you don't know element names:\n" +
                 "• screenshot_control(target='window', windowHandle='<handle>') — see numbered elements; image stays omitted by default to save tokens\n" +
@@ -175,27 +177,25 @@ public sealed class WindowsAutomationPrompts
         return
         [
             new(ChatRole.System,
-                "Use the standard semantic workflow for Chromium browsers (Edge, Chrome). " +
-                "Page content — links, buttons, form fields, and text — is reliably discoverable via ui_* tools using ARIA labels and visible text. " +
-                "When you launch a Chromium browser via app(), renderer accessibility is enabled automatically so the full page tree is exposed; " +
-                "a browser that was already open by other means may expose a reduced tree until it is interacted with. " +
-                "Browser chrome (address bar, tab bar, toolbar) is best-effort: prefer keyboard shortcuts for those. " +
-                "For authenticated or SSO-only sites, check whether a signed-in browser window is already open before launching a new instance — " +
-                "Chromium launcher helpers often exit immediately when an existing session picks up the request, so that is not a failure."),
+                "For Edge/Chrome page content, use semantic ui_* discovery with ARIA labels and visible text. " +
+                "app requests renderer accessibility; an existing browser may still expose a reduced tree. " +
+                "Browser chrome is best-effort: prefer shortcuts. For SSO, look for an existing signed-in window first. " +
+                WindowsAutomationGuidance.LaunchTargetInstructions),
             new(ChatRole.User,
                 $"Browser: {browser}\n" +
                 $"Goal: {goal}\n" +
                 (string.IsNullOrWhiteSpace(url) ? "" : $"URL: {url}\n") +
                 "\n" +
-                "1) Get a handle — prefer reusing an existing session:\n" +
+                "1) Observe existing windows or launch — prefer reusing an existing session:\n" +
                 $"   • window_management(action='find', title='{browser}') — find already-open browser first\n" +
                 (string.IsNullOrWhiteSpace(url)
                     ? $"   • app(programPath='{browser}') — only if no existing window found\n"
                     : $"   • app(programPath='{browser}', arguments='{url}') — only if no existing window found\n") +
-                "2) Use ui_find(windowHandle='<handle>', nameContains='...', controlType='Button'/'Hyperlink'/'Edit'/'Document', sortByProminence=true).\n" +
-                "3) Discover using nameContains or namePattern for page text and ARIA labels, then pass the returned ID to ui_click or ui_type.\n" +
-                "4) For browser chrome, prefer keyboard_control: Ctrl+L address bar, Ctrl+R refresh, Ctrl+Tab next tab.\n" +
-                "5) If names are unclear, use screenshot_control(target='window', windowHandle='<handle>') first; keep the default image omission for token efficiency.")
+                "2) " + WindowsAutomationGuidance.LaunchTargetInstructions + "\n" +
+                "3) Use ui_find(windowHandle='<handle>', nameContains='...', controlType='Button'/'Hyperlink'/'Edit'/'Document', sortByProminence=true).\n" +
+                "4) Discover using nameContains or namePattern for page text and ARIA labels, then pass the returned ID to ui_click or ui_type.\n" +
+                "5) For browser chrome, prefer keyboard_control: Ctrl+L address bar, Ctrl+R refresh, Ctrl+Tab next tab.\n" +
+                "6) If names are unclear, use screenshot_control(target='window', windowHandle='<handle>') first; keep the default image omission for token efficiency.")
         ];
     }
 
@@ -264,7 +264,7 @@ public sealed class WindowsAutomationPrompts
         ];
     }
 
-    /// <summary>Save a file using file_save tool. Handles Save As dialog automatically if filePath provided.</summary>
+    /// <summary>Save a file once using file_save; remaining prompts require an explicit caller decision.</summary>
     /// <param name="windowTitle">Window title to find (partial match). Example: 'Word', 'Notepad', 'Visual Studio Code'.</param>
     /// <param name="filePath">Optional: Full file path for Save As dialog (e.g., 'C:\temp\document.docx'). If omitted and Save As dialog appears, it returns a hint to interact manually.</param>
     /// <returns>A multi-message prompt template.</returns>
@@ -276,9 +276,9 @@ public sealed class WindowsAutomationPrompts
         return
         [
             new(ChatRole.System,
-                "Use file_save for saving files. It handles Save As dialogs automatically. " +
-                "Works universally across all Windows apps including Office, Notepad, and Electron apps. " +
-                "Pattern based on FlaUI and pywinauto modal window handling."),
+                "Use file_save for supported native Save As dialogs. It fills the path and clicks Save once. " +
+                "Confirmation and error dialogs remain open for an explicit caller decision. " +
+                "Inspect the current state after a failure instead of automatically repeating a save."),
             new(ChatRole.User,
                 $"Window: {windowTitle}\n" +
                 (string.IsNullOrWhiteSpace(filePath) ? "" : $"File path: {filePath}\n") +
@@ -290,23 +290,21 @@ public sealed class WindowsAutomationPrompts
                 (string.IsNullOrWhiteSpace(filePath)
                     ? "file_save(windowHandle='<handle>') — triggers Ctrl+S\n"
                     : $"file_save(windowHandle='<handle>', filePath='{filePath}')\n") +
+                "For an existing document at a different destination, also set triggerMode='save_as'. A path alone does not retarget Ctrl+S.\n" +
                 "\n" +
                 "What happens:\n" +
                 "• Sends Ctrl+S to the focused window\n" +
-                "• Waits up to 2 seconds for a Save As dialog\n" +
-                "• If dialog appears AND filePath provided: auto-fills filename and confirms\n" +
-                "• Handles overwrite confirmation dialogs automatically\n" +
+                "• Waits for an owned Save As dialog\n" +
+                "• If a dialog appears AND filePath is provided: fills the filename and clicks Save once\n" +
+                "• Returns confirmation_required for a detected overwrite prompt, leaving it open\n" +
+                "• Reports save errors without dismissing or cancelling dialogs\n" +
                 "\n" +
-                "MANUAL WORKFLOW if file_save fails:\n" +
-                "1) keyboard_control(action='press', key='s', modifiers='ctrl') — trigger Ctrl+S\n" +
-                "2) window_management(action='find', title='Save As') — discover Save As dialog\n" +
-                "3) Use modal window handle with ui_type, ui_click:\n" +
-                "   - Discover the Edit input and Save button with ui_find on the modal window.\n" +
-                "   - ui_type(windowHandle='<modal_handle>', elementId='<input-id>', text='<filename>')\n" +
-                "   - ui_click(windowHandle='<modal_handle>', elementId='<save-button-id>')\n" +
-                "\n" +
-                "IMPORTANT: Do NOT use keyboard_control for typing file paths! " +
-                "Use ui_type with the modal window handle to directly interact with the filename field.")
+                "AFTER A FAILURE OR CONFIRMATION REQUEST:\n" +
+                "1) Do not resend Ctrl+S or repeat file_save automatically.\n" +
+                "2) Inspect the current dialog using the handle in the response hint, or discover it with window_management.\n" +
+                "3) Read its message and controls with ui_read/ui_find.\n" +
+                "4) Decide whether to confirm, cancel, or correct the path; ask the user if that decision is not authorized.\n" +
+                "5) Use ui_click or keyboard_control for that explicit action. Use triggerMode='wait' only to fill an existing Save As dialog without another shortcut.")
         ];
     }
 

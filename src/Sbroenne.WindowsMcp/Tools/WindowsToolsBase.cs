@@ -6,7 +6,6 @@ using Sbroenne.WindowsMcp.Automation;
 using Sbroenne.WindowsMcp.Capture;
 using Sbroenne.WindowsMcp.Clipboard;
 using Sbroenne.WindowsMcp.Input;
-using Sbroenne.WindowsMcp.Macros;
 using Sbroenne.WindowsMcp.Native;
 using Sbroenne.WindowsMcp.Processes;
 using Sbroenne.WindowsMcp.Window;
@@ -46,7 +45,6 @@ public static class WindowsToolsBase
         _uiAutomationService, _screenshotService, _imageProcessor);
     private static readonly LegacyOcrService _legacyOcrService = new(NullLogger<LegacyOcrService>.Instance);
     private static readonly ClipboardService _clipboardService = new(_uiAutomationThread);
-    private static readonly MacroService _macroService = new();
     private static readonly ProcessService _processService = new();
     private static readonly SnapshotStateService _snapshotStateService = new();
 
@@ -94,9 +92,6 @@ public static class WindowsToolsBase
 
     /// <summary>Gets the clipboard service.</summary>
     public static ClipboardService ClipboardService => _clipboardService;
-
-    /// <summary>Gets the macro (record &amp; replay) service.</summary>
-    public static MacroService MacroService => _macroService;
 
     /// <summary>Gets the process (list &amp; kill) service.</summary>
     public static ProcessService ProcessService => _processService;
@@ -381,13 +376,17 @@ public static class WindowsToolsBase
                     PostActionTree = snapshot.Tree,
                     PostActionChanges = snapshot.Changes,
                     PostActionSnapshotToken = snapshot.SnapshotToken,
-                    PostActionBaseSnapshotToken = snapshot.BaseSnapshotToken
+                    PostActionBaseSnapshotToken = snapshot.BaseSnapshotToken,
+                    PostActionSnapshotIncomplete = snapshot.SnapshotIncomplete,
+                    PostActionWarning = snapshot.SnapshotWarning
                 };
             }
 
             return result with
             {
-                PostActionWarning = snapshot.ErrorMessage ?? "The action succeeded, but its optional follow-up snapshot failed."
+                PostActionSnapshotIncomplete = snapshot.SnapshotIncomplete,
+                PostActionWarning = snapshot.SnapshotWarning ?? snapshot.ErrorMessage ??
+                    "The action succeeded, but its optional follow-up snapshot failed."
             };
         }
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested)

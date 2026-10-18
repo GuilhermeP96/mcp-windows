@@ -15,7 +15,7 @@ namespace Sbroenne.WindowsMcp.Tools;
 public static partial class KeyboardControlTool
 {
     /// <summary>
-    /// ⚠️ TO SAVE FILES: STOP! Use file_save(windowHandle, filePath) instead - keyboard_control CANNOT handle Save As dialogs!
+    /// For supported Save As dialogs, file_save can fill the filename and click Save. Inspect and answer remaining prompts explicitly.
     /// Sends keyboard input to a specific window. The window is activated before input is sent.
     /// Best for: typing text, hotkeys (key='s', modifiers='ctrl'), special keys.
     /// For typing into a specific UI element by name/automationId, use ui_type instead.
@@ -27,7 +27,7 @@ public static partial class KeyboardControlTool
     /// </remarks>
     /// <param name="windowHandle">Window handle as decimal string (from app() or window_management 'find'). REQUIRED - ensures input goes to the correct window.</param>
     /// <param name="action">The keyboard action: type, press, key_down, key_up, sequence, release_all, get_keyboard_layout, or wait_for_idle.</param>
-    /// <param name="text">Text to type (required for type action).</param>
+    /// <param name="text">Text to type (required for type action). Uses paced input, with per-character acknowledgement in supported live-text editors. Other controls return an observation warning: read back the result. The timeout includes pacing time; cancellation can leave partial text.</param>
     /// <param name="key">The MAIN key to press (for press, key_down, key_up actions). Examples: enter, tab, escape, f1, a, s, c, v, copilot. For Ctrl+S, this is 's' (not 'ctrl').</param>
     /// <param name="modifiers">Modifier keys HELD during the key press: ctrl, shift, alt, win (comma-separated). For Ctrl+S: key='s', modifiers='ctrl'. For Ctrl+Shift+S: key='s', modifiers='ctrl,shift'.</param>
     /// <param name="repeat">Number of times to repeat key press (default: 1, for press action).</param>
@@ -49,6 +49,9 @@ public static partial class KeyboardControlTool
         [DefaultValue(false)] bool clearFirst,
         CancellationToken cancellationToken)
     {
+        var timeoutMs = action == KeyboardAction.Type
+            ? Input.KeyboardInputService.GetTextTimeoutMs(text?.Length ?? 0, WindowsToolsBase.TimeoutMs)
+            : WindowsToolsBase.TimeoutMs;
         try
         {
             // Validate windowHandle is provided
@@ -71,8 +74,8 @@ public static partial class KeyboardControlTool
 
             var handle = new IntPtr(handleValue);
 
-            // Create a linked token source with the configured timeout
-            using var timeoutCts = new CancellationTokenSource(WindowsToolsBase.TimeoutMs);
+            // Text pacing is additional to the configured operation budget.
+            using var timeoutCts = new CancellationTokenSource(timeoutMs);
             using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
             var linkedToken = linkedCts.Token;
 
@@ -155,7 +158,7 @@ public static partial class KeyboardControlTool
             return ToCallToolResult(
                 KeyboardControlResult.CreateFailure(
                     KeyboardControlErrorCode.OperationTimeout,
-                    $"Operation timed out after {WindowsToolsBase.TimeoutMs}ms"));
+                    $"Operation timed out or was cancelled (timeout budget: {timeoutMs}ms). Text may be partially entered."));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -288,7 +291,7 @@ public static partial class KeyboardControlTool
         {
             return result with
             {
-                Hint = "⚠️ WARNING: keyboard_control CANNOT handle Save As dialogs! Use file_save(windowHandle, filePath) instead - it handles the entire save workflow automatically."
+                Hint = "Inspect the current save state before sending more input. file_save(triggerMode='wait') can fill an open Save As dialog; overwrite and error prompts require an explicit decision."
             };
         }
 
@@ -296,7 +299,7 @@ public static partial class KeyboardControlTool
         {
             return result with
             {
-                Hint = "⚠️ For save operations, use file_save(windowHandle, filePath) - it handles Save As dialogs automatically!"
+                Hint = "Inspect the open menu or dialog before choosing the next action."
             };
         }
 
@@ -428,7 +431,7 @@ public static partial class KeyboardControlTool
         {
             return result with
             {
-                Hint = "⚠️ WARNING: For file saving, use file_save(windowHandle, filePath) - it handles Save As dialogs automatically!"
+                Hint = "Inspect the current save state before sending more input. Use file_save(triggerMode='wait') for an open Save As dialog, and answer any remaining prompt explicitly."
             };
         }
 
@@ -436,7 +439,7 @@ public static partial class KeyboardControlTool
         {
             return result with
             {
-                Hint = "⚠️ For save operations, use file_save(windowHandle, filePath) instead of menu navigation!"
+                Hint = "Inspect the open menu or dialog before choosing the next action."
             };
         }
 
