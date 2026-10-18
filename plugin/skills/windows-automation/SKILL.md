@@ -12,6 +12,13 @@ This plugin bundles the Windows MCP Server for Windows-only desktop automation. 
 
 ## Preferred workflow
 
+For software failures, first inspect the authorized application's exit code,
+focused tests, filtered logs or debugger through the available terminal/API.
+Use UIA to verify controls and text; use an image to verify appearance, layout or
+custom rendering. Logs cannot establish visual correctness. Read the relevant
+log range, not the entire history; keep timestamps, errors and correlation IDs.
+This does not authorize access to unrelated logs, elevation or desktop sessions.
+
 1. Use `window_management` to find or activate the target window.
 2. Use `ui_find`, `ui_read`, `ui_click`, and `ui_type` for normal controls.
 3. Use `ui_read_table` to extract a grid, table, or details-view list into structured rows + headers in one call instead of scraping cells with repeated `ui_read`.
@@ -32,6 +39,9 @@ This plugin bundles the Windows MCP Server for Windows-only desktop automation. 
 - Stale IDs require rediscovery. IDs belong to one owner and never transfer between MCP instances or the CLI daemon.
 - Batch `$prev` requires one unambiguous immediately preceding result. Saved macros discover fresh controls on every replay.
 - Re-check the UI tree after dialogs, page changes, or tab switches.
+- Scope discovery to the target window/control. Prefer automatic snapshot diffs
+  with a valid baseline over repeated full trees; rediscover stale IDs. Enable
+  diagnostics only for a concrete failure and fetch the relevant detail once.
 - Treat screenshots as discovery or fallback tools, not the primary control surface.
 
 ### Screenshot fallback

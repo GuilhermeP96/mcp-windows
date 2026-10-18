@@ -16,6 +16,12 @@ MCP instances have separate owners; never transfer their IDs to the CLI.
 
 ## Discovery (do this first)
 
+Use the command map once per task; query focused command help afterwards. Do not
+load `tools --json` and the entire guidance repeatedly for an unchanged daemon.
+For application failures, prefer authorized CLI/test results and filtered logs;
+use semantic reads for controls and screenshots for questions that need pixels.
+Do not replace an isolated desktop's session-bound adapter with this global CLI.
+
 - `wincli --help` - the command map and a common workflow.
 - `wincli tools` - every command with its options.
 - `wincli tools --json` - machine-readable tool manifest (names, descriptions, JSON input schemas);
