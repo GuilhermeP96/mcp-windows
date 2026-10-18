@@ -14,6 +14,13 @@ The skill itself does not install or configure the server.
 
 ## Preferred workflow
 
+For software failures, first inspect the authorized application's exit code,
+focused tests, filtered logs or debugger through the available terminal/API.
+Use UIA to verify controls and text; use an image to verify appearance, layout or
+custom rendering. Logs cannot establish visual correctness. Read the relevant
+log range, not the entire history; keep timestamps, errors and correlation IDs.
+This does not authorize access to unrelated logs, elevation or desktop sessions.
+
 1. Use `window_management` to find or activate the target window.
 2. Discover with `ui_find` or `ui_snapshot`; pass the returned IDs to `ui_read`, `ui_click`, and `ui_type`.
 3. Use `ui_read_table` to extract a grid, table, or details-view list into structured rows + headers in one call instead of scraping cells with repeated `ui_read`.
@@ -39,6 +46,9 @@ The skill itself does not install or configure the server.
   Forbidden steps reject the whole batch before it starts, even with `stopOnError=false`.
   `withSnapshot=true` requires enabled `ui_snapshot` before any action. Never route around disabled tools.
 - Re-check the UI tree after dialogs, page changes, or tab switches.
+- Scope discovery to the target window/control. Prefer automatic snapshot diffs
+  with a valid baseline over repeated full trees; rediscover stale IDs. Enable
+  diagnostics only for a concrete failure and fetch the relevant detail once.
 - Treat screenshots as discovery or fallback tools, not the primary control surface.
 
 ### Token-efficient observations
